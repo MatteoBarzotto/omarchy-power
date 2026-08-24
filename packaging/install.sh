@@ -31,7 +31,10 @@ systemctl daemon-reload
 # The bus reads its policy directory on demand, but a running daemon keeps the
 # old one until told otherwise.
 systemctl reload dbus.service 2>/dev/null || true
-systemctl enable --now omarchy-powerd.service
+systemctl enable omarchy-powerd.service
+# `enable --now` would leave an already-running daemon on the old binary, which
+# makes re-running this script look like it did nothing.
+systemctl restart omarchy-powerd.service
 
 echo
 systemctl --no-pager --lines=0 status omarchy-powerd.service || true

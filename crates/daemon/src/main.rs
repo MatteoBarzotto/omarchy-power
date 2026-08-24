@@ -6,6 +6,8 @@
 mod auth;
 mod iface;
 
+use std::io::IsTerminal;
+
 use anyhow::{Context, Result};
 use omarchy_power_core::detect;
 use tokio::signal::unix::{SignalKind, signal};
@@ -17,6 +19,9 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         // systemd captures stderr into the journal, which already timestamps.
         .without_time()
+        // Under systemd stderr is a socket, not a terminal, and colour escapes
+        // would end up as literal noise in the journal.
+        .with_ansi(std::io::stderr().is_terminal())
         .init();
 
     let session = std::env::args().any(|arg| arg == "--session");
