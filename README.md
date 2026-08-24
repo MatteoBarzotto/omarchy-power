@@ -55,6 +55,19 @@ busctl call org.omarchy.Power1 /org/omarchy/Power1 org.omarchy.Power1 \
 
 Without the daemon the TUI still opens, read-only.
 
+## Known conflicts
+
+Some systems already have something else writing the same attributes. Omarchy
+ships `battery-charge-threshold.service`, which hard-codes a value at every boot;
+whatever you set through omarchy-power is silently replaced on the next restart.
+Check before wondering where your setting went:
+
+```
+systemctl list-units --all | grep -iE 'batt|charge'
+```
+
+Detecting this and saying so out loud is on the list.
+
 ## Status
 
 Early — hardware can be read and changed; automatic profile switching is next.

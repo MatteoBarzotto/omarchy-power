@@ -85,15 +85,26 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| format!("claiming {} (is another instance running?)", iface::NAME))?;
 
+    // power-profiles-daemon and upower always live on the system bus, whatever
+    // bus we happen to be serving on. In `--session` mode that is a different
+    // connection; otherwise it is the one we already have.
+    let observed = if session {
+        zbus::Connection::system()
+            .await
+            .context("connecting to the system bus to watch other daemons")?
+    } else {
+        connection.clone()
+    };
+
     // Each watcher owns its subscription for the lifetime of the daemon; a
     // failing one must not take the others — or the interface — down with it.
     spawn_watcher(
         "power-profiles",
-        watch::power_profiles(connection.clone(), Arc::clone(&engine)),
+        watch::power_profiles(observed.clone(), Arc::clone(&engine)),
     );
     spawn_watcher(
         "power-source",
-        watch::power_source(connection.clone(), Arc::clone(&engine)),
+        watch::power_source(observed, Arc::clone(&engine)),
     );
     tokio::spawn(thermal_loop(Arc::clone(&engine)));
 
