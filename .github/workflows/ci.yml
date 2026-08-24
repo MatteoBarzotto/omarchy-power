@@ -20,3 +20,8 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all
+      # Each crate must also build on its own: a workspace build unifies
+      # features, which can hide a dependency that a single crate is missing.
+      - run: cargo check -p omarchy-power-core
+      - run: cargo check -p omarchy-power
+      - run: cargo check -p omarchy-powerd

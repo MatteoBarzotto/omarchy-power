@@ -202,16 +202,27 @@ fn render_temp(frame: &mut Frame, area: Rect, label: &str, temp: Option<u8>, fan
         t if t >= WARM_C => Color::Yellow,
         _ => Color::Green,
     };
-    let fan = fan.map(|f| format!("   fan {f}%")).unwrap_or_default();
+    let fan = fan.map(|f| format!("  fan {f}%")).unwrap_or_default();
 
+    // The reading sits beside the bar rather than on top of it: a centred gauge
+    // label is legible in a terminal but unreadable in a plain-text copy.
+    let [text, bar] = Layout::horizontal([Constraint::Length(19), Constraint::Min(4)]).areas(area);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(format!("{label}  "), Style::new().dark_gray()),
+            Span::styled(format!("{temp}°C"), Style::new().fg(colour).bold()),
+            Span::styled(fan, Style::new().dark_gray()),
+        ])),
+        text,
+    );
     frame.render_widget(
         Gauge::default()
             .gauge_style(Style::new().fg(colour))
             // Percent of a 100 degree scale: close enough to a thermal budget
             // to read at a glance, and it never needs a per-model calibration.
             .percent(u16::from(temp).min(100))
-            .label(format!("{label}  {temp}°C{fan}")),
-        area,
+            .label(""),
+        bar,
     );
 }
 
