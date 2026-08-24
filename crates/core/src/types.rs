@@ -92,3 +92,115 @@ impl HwProfile {
         *self == Self::default()
     }
 }
+
+/// Names used on the D-Bus interface and in the config file.
+///
+/// Kept here rather than in the daemon so that the wire vocabulary has exactly
+/// one definition — a client and a server disagreeing about the spelling of
+/// "power-saver" is a bug that only shows up at runtime.
+impl PowerLevel {
+    pub const ALL: [Self; 3] = [Self::Performance, Self::Balanced, Self::PowerSaver];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Performance => "performance",
+            Self::Balanced => "balanced",
+            Self::PowerSaver => "power-saver",
+        }
+    }
+}
+
+impl std::fmt::Display for PowerLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for PowerLevel {
+    type Err = UnknownValue;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|level| level.as_str() == s)
+            .ok_or(UnknownValue {
+                kind: "power level",
+                value: s.to_owned(),
+            })
+    }
+}
+
+impl FanMode {
+    pub const ALL: [Self; 3] = [Self::Auto, Self::Silent, Self::Aggressive];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Silent => "silent",
+            Self::Aggressive => "aggressive",
+        }
+    }
+}
+
+impl std::fmt::Display for FanMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for FanMode {
+    type Err = UnknownValue;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|mode| mode.as_str() == s)
+            .ok_or(UnknownValue {
+                kind: "fan mode",
+                value: s.to_owned(),
+            })
+    }
+}
+
+/// A string that arrived over the wire and did not name anything we know.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown {kind} `{value}`")]
+pub struct UnknownValue {
+    pub kind: &'static str,
+    pub value: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wire_names_round_trip() {
+        for level in PowerLevel::ALL {
+            assert_eq!(level.as_str().parse(), Ok(level));
+        }
+        for mode in FanMode::ALL {
+            assert_eq!(mode.as_str().parse(), Ok(mode));
+        }
+    }
+
+    #[test]
+    fn unknown_wire_names_are_rejected_with_the_offending_value() {
+        let err = "turbo".parse::<PowerLevel>().unwrap_err();
+        // "turbo" is MSI's word, not ours: vendor vocabulary must not leak onto
+        // the bus, and the error has to say what it saw.
+        assert_eq!(err.to_string(), "unknown power level `turbo`");
+    }
+
+    #[test]
+    fn an_empty_profile_is_recognised_as_a_no_op() {
+        assert!(HwProfile::default().is_empty());
+        assert!(
+            !HwProfile {
+                cooler_boost: Some(false),
+                ..HwProfile::default()
+            }
+            .is_empty()
+        );
+    }
+}

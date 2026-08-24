@@ -8,6 +8,13 @@ repository.workspace = true
 rust-version.workspace = true
 description = "Hardware abstraction for laptop power management backends"
 
+[features]
+# Wire helpers for the D-Bus interface. Off by default so the crate stays
+# usable (and buildable) without a bus in sight.
+dbus = ["dep:zvariant"]
+
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
+zvariant = { version = "5.15.0", optional = true }
+

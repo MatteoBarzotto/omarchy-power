@@ -13,6 +13,7 @@ name = "omarchy-power"
 path = "src/main.rs"
 
 [dependencies]
-omarchy-power-core = { workspace = true }
+omarchy-power-core = { workspace = true, features = ["dbus"] }
 anyhow = { workspace = true }
 ratatui = "0.30.2"
+zbus = { version = "5.19.0", default-features = false, features = ["blocking-api", "p2p"] }

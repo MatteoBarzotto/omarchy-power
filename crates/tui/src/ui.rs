@@ -1,6 +1,6 @@
 //! Rendering. Read-only for now: the daemon that accepts changes lands next.
 
-use omarchy_power_core::types::{FanMode, HwState, PowerLevel};
+use omarchy_power_core::types::{Capabilities, FanMode, HwState, PowerLevel};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
 
@@ -13,9 +13,34 @@ pub struct Screen<'a> {
     pub backend: &'a str,
     pub model: Option<&'a str>,
     pub state: &'a HwState,
-    /// Set when reading the last snapshot failed; the previous one stays on
-    /// screen so a transient error does not blank the display.
-    pub error: Option<&'a str>,
+    pub capabilities: Capabilities,
+    /// The outcome of the last action, or the last read failure. A failed read
+    /// leaves the previous snapshot on screen rather than blanking it.
+    pub status: Option<&'a Status>,
+    /// True when no daemon is available and nothing can be changed.
+    pub read_only: bool,
+}
+
+/// A transient line of feedback shown in the footer.
+pub struct Status {
+    pub text: String,
+    pub failed: bool,
+}
+
+impl Status {
+    pub fn ok(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            failed: false,
+        }
+    }
+
+    pub fn failed(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            failed: true,
+        }
+    }
 }
 
 pub fn draw(frame: &mut Frame, screen: &Screen) {
@@ -31,7 +56,7 @@ pub fn draw(frame: &mut Frame, screen: &Screen) {
     let [left, right] =
         Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(body);
 
-    frame.render_widget(state_panel(screen.state), left);
+    frame.render_widget(state_panel(screen.state, screen.capabilities), left);
     render_sensors(frame, right, screen.state);
     frame.render_widget(footer_line(screen), footer);
 }
@@ -48,22 +73,56 @@ fn header_line<'a>(screen: &Screen<'a>) -> Paragraph<'a> {
     Paragraph::new(Line::from(spans))
 }
 
-fn state_panel(state: &HwState) -> Paragraph<'_> {
+fn state_panel(state: &HwState, caps: Capabilities) -> Paragraph<'_> {
+    // Each row carries the key that changes it, so the panel doubles as the legend.
     let rows = [
-        ("Power level", power_level_text(state.power_level)),
-        ("Fan mode", fan_mode_text(state.fan_mode)),
-        ("Cooler boost", switch_text(state.cooler_boost)),
-        ("Battery saver", switch_text(state.battery_saver)),
-        ("Charge limit", charge_text(state)),
-        ("Battery", battery_text(state)),
+        (
+            "p",
+            "Power level",
+            power_level_text(state.power_level),
+            caps.power_level,
+        ),
+        (
+            "f",
+            "Fan mode",
+            fan_mode_text(state.fan_mode),
+            caps.fan_mode,
+        ),
+        (
+            "b",
+            "Cooler boost",
+            switch_text(state.cooler_boost),
+            caps.cooler_boost,
+        ),
+        (
+            "s",
+            "Battery saver",
+            switch_text(state.battery_saver),
+            caps.battery_saver,
+        ),
+        (
+            "-/+",
+            "Charge limit",
+            charge_text(state),
+            caps.charge_threshold,
+        ),
+        ("", "Battery", battery_text(state), true),
     ];
 
     let lines: Vec<Line> = rows
         .into_iter()
-        .map(|(label, value)| {
+        .map(|(key, label, value, supported)| {
+            // Unsupported rows stay visible but muted: knowing that the laptop
+            // cannot do something is worth a line of screen.
+            let value_style = if supported {
+                Style::new().bold()
+            } else {
+                Style::new().dark_gray()
+            };
             Line::from(vec![
+                Span::styled(format!("{key:>3}  "), Style::new().yellow()),
                 Span::styled(format!("{label:<15}"), Style::new().dark_gray()),
-                Span::styled(value, Style::new().bold()),
+                Span::styled(value, value_style),
             ])
         })
         .collect();
@@ -205,13 +264,21 @@ fn battery_text(state: &HwState) -> String {
 }
 
 fn footer_line<'a>(screen: &Screen<'a>) -> Paragraph<'a> {
-    match screen.error {
-        Some(error) => Paragraph::new(Span::styled(format!(" {error}"), Style::new().red().bold())),
-        None => Paragraph::new(Span::styled(
-            " q quit   r refresh   (read-only until the daemon lands)",
-            Style::new().dark_gray(),
-        )),
+    if let Some(status) = screen.status {
+        let style = if status.failed {
+            Style::new().red().bold()
+        } else {
+            Style::new().green()
+        };
+        return Paragraph::new(Span::styled(format!(" {}", status.text), style));
     }
+
+    let hint = if screen.read_only {
+        " q quit   r refresh   read-only: omarchy-powerd is not running"
+    } else {
+        " q quit   r refresh   p/f cycle   b/s toggle   -/+ charge limit"
+    };
+    Paragraph::new(Span::styled(hint, Style::new().dark_gray()))
 }
 
 #[cfg(test)]
@@ -242,7 +309,39 @@ mod tests {
         }
     }
 
-    fn render(state: &HwState, error: Option<&str>, width: u16, height: u16) -> String {
+    fn all_caps() -> Capabilities {
+        Capabilities {
+            power_level: true,
+            fan_mode: true,
+            cooler_boost: true,
+            battery_saver: true,
+            charge_threshold: true,
+        }
+    }
+
+    struct Case<'a> {
+        state: &'a HwState,
+        caps: Capabilities,
+        status: Option<&'a Status>,
+        read_only: bool,
+    }
+
+    impl<'a> Case<'a> {
+        fn new(state: &'a HwState) -> Self {
+            Self {
+                state,
+                caps: all_caps(),
+                status: None,
+                read_only: false,
+            }
+        }
+    }
+
+    fn render(case: Case<'_>) -> String {
+        render_sized(case, 100, 24)
+    }
+
+    fn render_sized(case: Case<'_>, width: u16, height: u16) -> String {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
             .draw(|frame| {
@@ -251,8 +350,10 @@ mod tests {
                     &Screen {
                         backend: "msi-ec",
                         model: Some("1587EMS1.106"),
-                        state,
-                        error,
+                        state: case.state,
+                        capabilities: case.caps,
+                        status: case.status,
+                        read_only: case.read_only,
                     },
                 )
             })
@@ -268,7 +369,8 @@ mod tests {
 
     #[test]
     fn shows_hardware_state_and_sensors() {
-        let screen = render(&sample_state(), None, 100, 24);
+        let state = sample_state();
+        let screen = render(Case::new(&state));
 
         assert!(screen.contains("msi-ec"), "backend name missing");
         assert!(screen.contains("1587EMS1.106"), "firmware version missing");
@@ -280,8 +382,13 @@ mod tests {
     }
 
     #[test]
-    fn an_error_takes_over_the_footer_but_keeps_the_last_snapshot() {
-        let screen = render(&sample_state(), Some("reading shift_mode: EIO"), 100, 24);
+    fn a_failure_takes_over_the_footer_but_keeps_the_last_snapshot() {
+        let state = sample_state();
+        let status = Status::failed("reading shift_mode: EIO");
+        let screen = render(Case {
+            status: Some(&status),
+            ..Case::new(&state)
+        });
 
         assert!(screen.contains("EIO"), "error not shown");
         assert!(screen.contains("balanced"), "last known state was dropped");
@@ -289,7 +396,11 @@ mod tests {
 
     #[test]
     fn unsupported_hardware_reads_as_such_rather_than_as_zero() {
-        let screen = render(&HwState::default(), None, 100, 24);
+        let state = HwState::default();
+        let screen = render(Case {
+            caps: Capabilities::default(),
+            ..Case::new(&state)
+        });
 
         assert!(
             screen.contains("unsupported"),
@@ -302,10 +413,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_footer_explains_why_keys_do_nothing_without_a_daemon() {
+        let state = sample_state();
+        let live = render(Case::new(&state));
+        assert!(live.contains("p/f cycle"), "controls not advertised");
+
+        let read_only = render(Case {
+            read_only: true,
+            ..Case::new(&state)
+        });
+        assert!(
+            read_only.contains("omarchy-powerd is not running"),
+            "read-only mode unexplained"
+        );
+        assert!(
+            !read_only.contains("p/f cycle"),
+            "offers keys that do nothing"
+        );
+    }
+
     /// A terminal too small to hold the layout must not panic.
     #[test]
     fn survives_a_tiny_terminal() {
-        render(&sample_state(), None, 20, 3);
-        render(&sample_state(), None, 1, 1);
+        let state = sample_state();
+        render_sized(Case::new(&state), 20, 3);
+        render_sized(Case::new(&state), 1, 1);
     }
 }

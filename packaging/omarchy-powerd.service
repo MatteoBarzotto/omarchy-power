@@ -1,0 +1,45 @@
+[Unit]
+Description=Laptop hardware power management
+Documentation=https://github.com/MatteoBarzotto/omarchy-power
+# The bus is what clients reach us through; without it there is no point starting.
+After=dbus.service polkit.service
+Wants=polkit.service
+
+[Service]
+Type=dbus
+BusName=org.omarchy.Power1
+ExecStart=/usr/bin/omarchy-powerd
+Restart=on-failure
+RestartSec=2
+
+# The daemon writes to a handful of sysfs attributes and nothing else.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @mount @swap @reboot
+# All the attributes we write are root-owned and mode 0644, so root needs no
+# capabilities at all to write them.
+CapabilityBoundingSet=
+UMask=0077
+
+# ProtectSystem=strict makes /sys read-only; open just what the backends touch.
+ReadWritePaths=/sys/devices/platform
+ReadWritePaths=/sys/class/power_supply
+
+[Install]
+WantedBy=multi-user.target

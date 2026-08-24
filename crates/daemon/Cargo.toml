@@ -1,0 +1,22 @@
+[package]
+name = "omarchy-powerd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "System daemon applying laptop power profiles to hardware"
+
+[[bin]]
+name = "omarchy-powerd"
+path = "src/main.rs"
+
+[dependencies]
+omarchy-power-core = { workspace = true, features = ["dbus"] }
+anyhow = { workspace = true }
+zbus = "5.19.0"
+zbus_polkit = "5.0.0"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "signal", "time"] }

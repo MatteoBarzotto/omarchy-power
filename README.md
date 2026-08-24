@@ -25,9 +25,39 @@ was running. You get half a power profile and nothing tells you.
 `omarchy-power` fills in that half. It listens for PPD profile changes and applies
 the matching hardware state, so one switch means one thing.
 
+## Install
+
+```
+cargo build --release
+sudo packaging/install.sh
+omarchy-power
+```
+
+That installs two binaries, a systemd unit, a D-Bus policy and a polkit policy.
+`packaging/uninstall.sh` reverses it.
+
+## How it fits together
+
+`omarchy-powerd` runs as root under systemd and is the only thing that writes to
+sysfs. It owns `org.omarchy.Power1` on the system bus, and every write is checked
+with polkit — an active local session is allowed without a prompt, an ssh session
+has to authenticate. The TUI is an ordinary unprivileged client.
+
+Which means the daemon is usable by hand, and that is the fastest way to diagnose
+a hardware report:
+
+```
+busctl introspect org.omarchy.Power1 /org/omarchy/Power1
+busctl call org.omarchy.Power1 /org/omarchy/Power1 org.omarchy.Power1 Snapshot
+busctl call org.omarchy.Power1 /org/omarchy/Power1 org.omarchy.Power1 \
+    SetPowerLevel s power-saver
+```
+
+Without the daemon the TUI still opens, read-only.
+
 ## Status
 
-Early — the TUI reads hardware today, the daemon that writes to it is next.
+Early — hardware can be read and changed; automatic profile switching is next.
 
 Supported hardware:
 

@@ -1,20 +1,28 @@
-//! `omarchy-power` — a terminal view of what the laptop's hardware is doing.
+//! `omarchy-power` — a terminal view of what the laptop's hardware is doing,
+//! and the keys to change it.
 //!
-//! Reads only, for now. Writes go through `omarchy-powerd` over D-Bus once that
-//! exists, so this binary never needs to run as root.
+//! Never writes to sysfs itself: changes go to `omarchy-powerd` over D-Bus, so
+//! this binary has no reason to run as root. Without the daemon it still opens,
+//! read-only.
 
+mod actions;
 mod dump;
+mod source;
 mod ui;
 
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
-use omarchy_power_core::{Backend, detect};
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use actions::Action;
+use anyhow::Result;
+use ratatui::crossterm::event::{self, Event, KeyEventKind};
+use source::Source;
+use ui::Status;
 
 /// How often the sensor snapshot is refreshed.
 const REFRESH: Duration = Duration::from_secs(1);
+/// How long a message stays in the footer before the key hints come back.
+const STATUS_LINGER: Duration = Duration::from_secs(4);
 
 fn main() -> Result<()> {
     match Cli::parse(std::env::args().skip(1))? {
@@ -55,39 +63,66 @@ USAGE:
     omarchy-power                     open the TUI
     omarchy-power dump-fixture [DIR]  capture this machine's sysfs attributes
 
+The TUI talks to omarchy-powerd over D-Bus. Without it, hardware is shown
+read-only.
+
 ENVIRONMENT:
-    OMARCHY_POWER_SYSFS   read from this directory instead of /sys",
+    OMARCHY_POWER_SYSFS   read from this directory instead of /sys
+                          (read-only mode only)",
         env!("CARGO_PKG_VERSION")
     );
 }
 
 fn run_tui() -> Result<()> {
-    let backend = detect().context(
-        "no supported hardware found\n\
-         on MSI laptops this usually means the msi-ec module is missing: \
-         install msi-ec-dkms and `modprobe msi_ec`",
-    )?;
-
+    let source = Source::connect()?;
     let mut terminal = ratatui::init();
-    let result = event_loop(&mut terminal, backend.as_ref());
+    let result = event_loop(&mut terminal, &source);
     ratatui::restore();
     result
 }
 
-fn event_loop(terminal: &mut ratatui::DefaultTerminal, backend: &dyn Backend) -> Result<()> {
-    let model = backend.model();
-    let mut state = backend.read_state()?;
-    let mut error: Option<String> = None;
+/// The last thing that happened, and when — so it can be cleared on its own.
+struct Footer {
+    status: Option<Status>,
+    since: Instant,
+}
+
+impl Footer {
+    fn set(&mut self, status: Status) {
+        self.status = Some(status);
+        self.since = Instant::now();
+    }
+
+    fn expire(&mut self) {
+        if self.since.elapsed() > STATUS_LINGER {
+            self.status = None;
+        }
+    }
+}
+
+fn event_loop(terminal: &mut ratatui::DefaultTerminal, source: &Source) -> Result<()> {
+    let backend = source.backend_name();
+    let model = source.model();
+    let capabilities = source.capabilities();
+    let read_only = source.is_read_only();
+
+    let mut state = source.snapshot()?;
+    let mut footer = Footer {
+        status: None,
+        since: Instant::now(),
+    };
 
     loop {
         terminal.draw(|frame| {
             ui::draw(
                 frame,
                 &ui::Screen {
-                    backend: backend.name(),
+                    backend: &backend,
                     model: model.as_deref(),
                     state: &state,
-                    error: error.as_deref(),
+                    capabilities,
+                    status: footer.status.as_ref(),
+                    read_only,
                 },
             );
         })?;
@@ -97,22 +132,92 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, backend: &dyn Backend) ->
             && let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press
         {
-            match key.code {
-                KeyCode::Char('q' | 'Q') | KeyCode::Esc => return Ok(()),
-                KeyCode::Char('r' | 'R') => {}
-                _ => continue,
+            match actions::for_key(key.code, &state, capabilities) {
+                Action::Quit => return Ok(()),
+                Action::Ignored | Action::Refresh => {}
+                Action::Unsupported(what) => {
+                    footer.set(Status::failed(format!("this machine has no {what}")));
+                }
+                action => {
+                    if let Some(status) = perform(source, action) {
+                        footer.set(status);
+                    }
+                }
             }
         }
 
         // A failed read keeps the last good snapshot on screen; an EC that is
         // busy talking to the firmware returns errors now and then and the
         // display should not flicker because of it.
-        match backend.read_state() {
-            Ok(fresh) => {
-                state = fresh;
-                error = None;
-            }
-            Err(e) => error = Some(e.to_string()),
+        match source.snapshot() {
+            Ok(fresh) => state = fresh,
+            Err(e) => footer.set(Status::failed(e.to_string())),
         }
+        footer.expire();
+    }
+}
+
+/// Carry out an action and describe the outcome.
+fn perform(source: &Source, action: Action) -> Option<Status> {
+    let (result, description) = match action {
+        Action::SetPowerLevel(level) => (
+            source.set_power_level(level),
+            format!("power level: {level}"),
+        ),
+        Action::SetFanMode(mode) => (source.set_fan_mode(mode), format!("fan mode: {mode}")),
+        Action::SetCoolerBoost(on) => (
+            source.set_cooler_boost(on),
+            format!("cooler boost: {}", on_off(on)),
+        ),
+        Action::SetBatterySaver(on) => (
+            source.set_battery_saver(on),
+            format!("battery saver: {}", on_off(on)),
+        ),
+        Action::SetChargeThreshold(percent) => (
+            source.set_charge_end_threshold(percent),
+            format!("charge limit: {percent}%"),
+        ),
+        // Handled by the caller; nothing to send anywhere.
+        Action::Quit | Action::Refresh | Action::Ignored | Action::Unsupported(_) => return None,
+    };
+
+    Some(match result {
+        Ok(()) => Status::ok(description),
+        // The daemon's message is more specific than anything we could invent
+        // here — a polkit refusal and a missing module read very differently.
+        Err(e) => Status::failed(format!("{description} failed: {}", root_cause(&e))),
+    })
+}
+
+fn on_off(on: bool) -> &'static str {
+    if on { "on" } else { "off" }
+}
+
+/// D-Bus errors arrive wrapped; the innermost message is the useful one.
+fn root_cause(error: &anyhow::Error) -> String {
+    error
+        .chain()
+        .last()
+        .map_or_else(|| error.to_string(), std::string::ToString::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_status_clears_itself_after_a_while() {
+        let mut footer = Footer {
+            status: None,
+            since: Instant::now(),
+        };
+        footer.set(Status::ok("power level: balanced"));
+
+        footer.expire();
+        assert!(footer.status.is_some(), "should linger long enough to read");
+
+        footer.since = Instant::now() - STATUS_LINGER - Duration::from_secs(1);
+        footer.expire();
+        assert!(footer.status.is_none(), "should not stay forever");
     }
 }
