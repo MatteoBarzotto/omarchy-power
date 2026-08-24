@@ -1,2 +1,5 @@
 /target
 *.swp
+
+# Dziennik jest osobisty i zostaje lokalnie
+JOURNAL.md
