@@ -1,0 +1,38 @@
+# omarchy-power — installed at /etc/omarchy-power/config.toml
+#
+# Everything here has a built-in default; the file only needs the parts you
+# want to change. Delete it entirely and the defaults below still apply.
+
+# What each power-profiles-daemon profile means in hardware terms. These are
+# the names your desktop already switches between.
+[profiles.performance]
+power-level = "performance"
+fan-mode = "aggressive"
+battery-saver = false
+
+[profiles.balanced]
+power-level = "balanced"
+fan-mode = "auto"
+battery-saver = false
+
+[profiles.power-saver]
+power-level = "power-saver"
+fan-mode = "silent"
+battery-saver = true
+
+# Applied on top of the profile while running on battery. Empty by default:
+# quietly overriding the profile you just picked, the moment you unplug, is a
+# surprise rather than a feature. Uncomment what you want.
+[on-battery]
+# power-level = "power-saver"
+# battery-saver = true
+
+# Keeps a quiet fan profile from cooking the machine. Two thresholds, because a
+# single one would flap the fans on and off around the trip point.
+[thermal]
+enabled = true
+high-c = 90
+# Release only once it is back down to here...
+low-c = 80
+# ...and has stayed there this long.
+cooldown-s = 30

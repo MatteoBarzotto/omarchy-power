@@ -77,7 +77,12 @@ pub struct HwState {
 }
 
 /// A requested change. `None` means "leave this alone" — never "turn it off".
+///
+/// Also the shape of a profile in the daemon's config file, hence the kebab-case
+/// field names and the refusal to accept unknown ones: a typo in a config file
+/// should be an error, not a setting that silently never applies.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct HwProfile {
     pub power_level: Option<PowerLevel>,
     pub fan_mode: Option<FanMode>,

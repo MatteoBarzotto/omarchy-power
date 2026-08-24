@@ -20,3 +20,6 @@ zbus_polkit = "5.0.0"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "signal", "time"] }
+toml = "1.1.4"
+serde.workspace = true
+futures-util = "0.3.34"

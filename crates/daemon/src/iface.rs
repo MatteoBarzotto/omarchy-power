@@ -6,24 +6,27 @@
 
 use std::collections::HashMap;
 
+use std::sync::Arc;
+
 use omarchy_power_core::types::{FanMode, HwProfile, PowerLevel};
-use omarchy_power_core::{Backend, Error, wire};
+use omarchy_power_core::{Error, wire};
 use zbus::message::Header;
 use zbus::{fdo, interface};
 
 use crate::auth::{self, Authority};
+use crate::engine::Engine;
 
 pub const NAME: &str = "org.omarchy.Power1";
 pub const PATH: &str = "/org/omarchy/Power1";
 
 pub struct Power {
-    backend: Box<dyn Backend>,
+    engine: Arc<Engine>,
     authority: Authority,
 }
 
 impl Power {
-    pub fn new(backend: Box<dyn Backend>, authority: Authority) -> Self {
-        Self { backend, authority }
+    pub fn new(engine: Arc<Engine>, authority: Authority) -> Self {
+        Self { engine, authority }
     }
 
     /// Apply a profile after checking that the caller is allowed to.
@@ -34,8 +37,7 @@ impl Power {
         profile: HwProfile,
     ) -> fdo::Result<()> {
         self.authority.check(header, action).await?;
-        tracing::info!(?profile, "applying");
-        self.backend.apply(&profile).map_err(to_fdo)
+        self.engine.apply_manual(&profile).map_err(to_fdo)
     }
 }
 
@@ -46,7 +48,7 @@ impl Power {
     /// One call rather than a property per reading: clients refresh this once a
     /// second, and a dozen round trips per second for a dozen values is silly.
     fn snapshot(&self) -> fdo::Result<wire::Dict> {
-        let state = self.backend.read_state().map_err(to_fdo)?;
+        let state = self.engine.backend().read_state().map_err(to_fdo)?;
         Ok(wire::state_to_dict(&state))
     }
 
@@ -127,19 +129,19 @@ impl Power {
     /// Which backend claimed this machine, e.g. `msi-ec`.
     #[zbus(property)]
     fn backend_name(&self) -> String {
-        self.backend.name().to_owned()
+        self.engine.backend().name().to_owned()
     }
 
     /// Firmware version, where the hardware exposes one.
     #[zbus(property)]
     fn model(&self) -> String {
-        self.backend.model().unwrap_or_default()
+        self.engine.backend().model().unwrap_or_default()
     }
 
     /// What this machine supports, so clients can grey out the rest.
     #[zbus(property)]
     fn capabilities(&self) -> HashMap<String, bool> {
-        wire::caps_to_dict(&self.backend.capabilities())
+        wire::caps_to_dict(&self.engine.backend().capabilities())
     }
 }
 

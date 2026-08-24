@@ -4,14 +4,31 @@
 //! gates every write behind polkit. Clients stay unprivileged.
 
 mod auth;
+mod config;
+mod engine;
 mod iface;
+mod watch;
 
 use std::io::IsTerminal;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
+use config::Config;
+use engine::Engine;
 use omarchy_power_core::detect;
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
+
+/// How often the thermal guard looks at the temperature.
+///
+/// Fast enough to catch a machine heating up, slow enough that reading the EC
+/// costs nothing worth measuring.
+const THERMAL_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Points the daemon at a different config file, mostly for testing.
+const CONFIG_ENV: &str = "OMARCHY_POWER_CONFIG";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -47,11 +64,17 @@ async fn main() -> Result<()> {
     }
     .context("connecting to the message bus")?;
 
+    let config_path = std::env::var_os(CONFIG_ENV)
+        .map_or_else(|| PathBuf::from(config::DEFAULT_PATH), PathBuf::from);
+    let config = Config::load(&config_path)?;
+
+    let engine = Arc::new(Engine::new(backend, config));
+
     let authority = auth::Authority::new(&connection)
         .await
         .context("connecting to polkit")?;
 
-    let power = iface::Power::new(backend, authority);
+    let power = iface::Power::new(Arc::clone(&engine), authority);
     connection
         .object_server()
         .at(iface::PATH, power)
@@ -62,10 +85,40 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| format!("claiming {} (is another instance running?)", iface::NAME))?;
 
+    // Each watcher owns its subscription for the lifetime of the daemon; a
+    // failing one must not take the others — or the interface — down with it.
+    spawn_watcher(
+        "power-profiles",
+        watch::power_profiles(connection.clone(), Arc::clone(&engine)),
+    );
+    spawn_watcher(
+        "power-source",
+        watch::power_source(connection.clone(), Arc::clone(&engine)),
+    );
+    tokio::spawn(thermal_loop(Arc::clone(&engine)));
+
     tracing::info!(name = iface::NAME, path = iface::PATH, "ready");
     wait_for_shutdown().await?;
     tracing::info!("shutting down");
     Ok(())
+}
+
+fn spawn_watcher(name: &'static str, task: impl Future<Output = Result<()>> + Send + 'static) {
+    tokio::spawn(async move {
+        match task.await {
+            Ok(()) => tracing::warn!(name, "watcher stopped"),
+            Err(e) => tracing::error!(name, error = %e, "watcher failed"),
+        }
+    });
+}
+
+/// Poll the temperature so the thermal guard has something to act on.
+async fn thermal_loop(engine: Arc<Engine>) {
+    let mut ticker = tokio::time::interval(THERMAL_INTERVAL);
+    loop {
+        ticker.tick().await;
+        engine.tick_thermal();
+    }
 }
 
 /// Return on SIGTERM (systemd stopping us) or SIGINT (a terminal).

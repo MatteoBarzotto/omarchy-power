@@ -18,6 +18,16 @@ if [[ ! -x "$binaries/omarchy-powerd" ]]; then
     exit 1
 fi
 
+# Installing a stale release build after editing the source is an easy mistake
+# to make, and the symptom — a daemon that quietly lacks the feature you just
+# wrote — looks nothing like the cause.
+newest_source="$(find "$repo/crates" -name '*.rs' -newer "$binaries/omarchy-powerd" -print -quit)"
+if [[ -n "$newest_source" ]]; then
+    echo "the release build is older than $newest_source" >&2
+    echo "run: cargo build --release" >&2
+    exit 1
+fi
+
 install -Dm755 "$binaries/omarchy-powerd" /usr/bin/omarchy-powerd
 install -Dm755 "$binaries/omarchy-power"  /usr/bin/omarchy-power
 install -Dm644 "$repo/packaging/org.omarchy.Power1.conf" \
@@ -26,6 +36,11 @@ install -Dm644 "$repo/packaging/org.omarchy.power1.policy" \
     /usr/share/polkit-1/actions/org.omarchy.power1.policy
 install -Dm644 "$repo/packaging/omarchy-powerd.service" \
     /usr/lib/systemd/system/omarchy-powerd.service
+
+# Never overwrite a config the user has edited.
+if [[ ! -e /etc/omarchy-power/config.toml ]]; then
+    install -Dm644 "$repo/packaging/config.toml" /etc/omarchy-power/config.toml
+fi
 
 systemctl daemon-reload
 # The bus reads its policy directory on demand, but a running daemon keeps the
