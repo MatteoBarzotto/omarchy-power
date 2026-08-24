@@ -1,0 +1,18 @@
+[package]
+name = "omarchy-power"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "TUI for laptop power profiles, fans and charge thresholds"
+
+[[bin]]
+name = "omarchy-power"
+path = "src/main.rs"
+
+[dependencies]
+omarchy-power-core = { workspace = true }
+anyhow = { workspace = true }
+ratatui = "0.30.2"
