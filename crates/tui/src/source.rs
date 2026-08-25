@@ -28,6 +28,8 @@ pub(crate) trait Power {
     fn model(&self) -> zbus::Result<String>;
     #[zbus(property)]
     fn capabilities(&self) -> zbus::Result<std::collections::HashMap<String, bool>>;
+    #[zbus(property)]
+    fn charge_threshold_conflicts(&self) -> zbus::Result<Vec<String>>;
 }
 
 pub enum Source {
@@ -37,6 +39,8 @@ pub enum Source {
         backend: String,
         model: Option<String>,
         capabilities: Capabilities,
+        /// Units that overwrite the charge threshold behind our back.
+        charge_conflicts: Vec<String>,
     },
     /// No daemon: read straight from sysfs and refuse to write.
     Local {
@@ -68,11 +72,15 @@ impl Source {
         let backend = proxy.backend_name()?;
         let model = proxy.model().ok().filter(|m| !m.is_empty());
         let capabilities = wire::caps_from_dict(&proxy.capabilities()?);
+        // An older daemon does not have the property; that is not a reason to
+        // refuse to start, only a reason not to warn about anything.
+        let charge_conflicts = proxy.charge_threshold_conflicts().unwrap_or_default();
         Ok(Self::Daemon {
             proxy,
             backend,
             model,
             capabilities,
+            charge_conflicts,
         })
     }
 
@@ -110,6 +118,17 @@ impl Source {
     pub fn capabilities(&self) -> Capabilities {
         match self {
             Self::Daemon { capabilities, .. } | Self::Local { capabilities, .. } => *capabilities,
+        }
+    }
+
+    /// Who else writes the charge threshold. Empty without a daemon: the
+    /// read-only view has no bus to ask systemd over.
+    pub fn charge_conflicts(&self) -> &[String] {
+        match self {
+            Self::Daemon {
+                charge_conflicts, ..
+            } => charge_conflicts,
+            Self::Local { .. } => &[],
         }
     }
 

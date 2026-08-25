@@ -176,14 +176,23 @@ the DKMS build from the AUR does.
 
 Some systems already have something else writing the same attributes. Omarchy
 ships `battery-charge-threshold.service`, which hard-codes a value at every boot,
-so whatever you set here is silently replaced on the next restart. Worth checking
-before wondering where your setting went:
+so whatever you set here is silently replaced on the next restart. TLP does the
+same from its own config.
+
+The daemon asks systemd at startup whether any of them are enabled, names them
+in the journal, and the TUI prints the name under the charge limit. The bus has
+it too:
 
 ```
-systemctl list-units --all | grep -iE 'batt|charge'
+busctl get-property org.omarchy.Power1 /org/omarchy/Power1 \
+    org.omarchy.Power1 ChargeThresholdConflicts
 ```
 
-Detecting this and saying so out loud is on the list.
+Whichever one you want to keep, disable the other:
+
+```
+sudo systemctl disable --now battery-charge-threshold.service
+```
 
 ## Status
 

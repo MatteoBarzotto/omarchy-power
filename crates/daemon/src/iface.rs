@@ -22,11 +22,21 @@ pub const PATH: &str = "/org/omarchy/Power1";
 pub struct Power {
     engine: Arc<Engine>,
     authority: Authority,
+    /// Units that also write the charge threshold, as found at startup.
+    ///
+    /// Read once rather than on every property read: enabling a unit is a
+    /// deliberate act that happens between sessions, and a client asking a
+    /// dozen times a second must not turn into a dozen calls into systemd.
+    charge_conflicts: Vec<String>,
 }
 
 impl Power {
-    pub fn new(engine: Arc<Engine>, authority: Authority) -> Self {
-        Self { engine, authority }
+    pub fn new(engine: Arc<Engine>, authority: Authority, charge_conflicts: Vec<String>) -> Self {
+        Self {
+            engine,
+            authority,
+            charge_conflicts,
+        }
     }
 
     /// Apply a profile after checking that the caller is allowed to.
@@ -136,6 +146,17 @@ impl Power {
     #[zbus(property)]
     fn model(&self) -> String {
         self.engine.backend().model().unwrap_or_default()
+    }
+
+    /// Units that will overwrite whatever charge threshold we set.
+    ///
+    /// Empty on a machine where we have the attribute to ourselves. A client
+    /// showing a charge limit should say who else is writing it, because the
+    /// symptom — the limit is back at 100% after a reboot — looks like this
+    /// tool losing the setting.
+    #[zbus(property)]
+    fn charge_threshold_conflicts(&self) -> Vec<String> {
+        self.charge_conflicts.clone()
     }
 
     /// What this machine supports, so clients can grey out the rest.

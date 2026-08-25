@@ -105,6 +105,7 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, source: &Source) -> Resul
     let model = source.model();
     let capabilities = source.capabilities();
     let read_only = source.is_read_only();
+    let charge_conflicts = source.charge_conflicts().to_vec();
 
     let mut state = source.snapshot()?;
     let mut footer = Footer {
@@ -123,6 +124,7 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, source: &Source) -> Resul
                     capabilities,
                     status: footer.status.as_ref(),
                     read_only,
+                    charge_conflicts: &charge_conflicts,
                 },
             );
         })?;

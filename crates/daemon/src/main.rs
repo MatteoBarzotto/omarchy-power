@@ -5,6 +5,7 @@
 
 mod auth;
 mod config;
+mod conflicts;
 mod engine;
 mod iface;
 mod watch;
@@ -74,7 +75,36 @@ async fn main() -> Result<()> {
         .await
         .context("connecting to polkit")?;
 
-    let power = iface::Power::new(Arc::clone(&engine), authority);
+    // power-profiles-daemon, upower and systemd all live on the system bus,
+    // whatever bus we happen to be serving on. In `--session` mode that is a
+    // different connection; otherwise it is the one we already have.
+    let observed = if session {
+        zbus::Connection::system()
+            .await
+            .context("connecting to the system bus to watch other daemons")?
+    } else {
+        connection.clone()
+    };
+
+    // Asked before the interface goes up so the answer is on the bus from the
+    // first client read, and in the journal before anyone wonders.
+    let charge_conflicts = match conflicts::charge_threshold_writers(&observed).await {
+        Ok(units) => units,
+        Err(e) => {
+            // Not fatal: without systemd answering we simply cannot tell, and
+            // claiming "no conflicts" would be a stronger statement than we have.
+            tracing::warn!(error = %e, "cannot tell who else writes the charge threshold");
+            Vec::new()
+        }
+    };
+    if !charge_conflicts.is_empty() {
+        tracing::warn!(
+            units = charge_conflicts.join(", "),
+            "another unit writes the charge threshold and will overwrite ours"
+        );
+    }
+
+    let power = iface::Power::new(Arc::clone(&engine), authority, charge_conflicts);
     connection
         .object_server()
         .at(iface::PATH, power)
@@ -84,17 +114,6 @@ async fn main() -> Result<()> {
         .request_name(iface::NAME)
         .await
         .with_context(|| format!("claiming {} (is another instance running?)", iface::NAME))?;
-
-    // power-profiles-daemon and upower always live on the system bus, whatever
-    // bus we happen to be serving on. In `--session` mode that is a different
-    // connection; otherwise it is the one we already have.
-    let observed = if session {
-        zbus::Connection::system()
-            .await
-            .context("connecting to the system bus to watch other daemons")?
-    } else {
-        connection.clone()
-    };
 
     // Each watcher owns its subscription for the lifetime of the daemon; a
     // failing one must not take the others — or the interface — down with it.

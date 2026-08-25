@@ -19,6 +19,9 @@ pub struct Screen<'a> {
     pub status: Option<&'a Status>,
     /// True when no daemon is available and nothing can be changed.
     pub read_only: bool,
+    /// Units that rewrite the charge threshold at boot. Shown next to the
+    /// charge limit, because the setting looks lost rather than overridden.
+    pub charge_conflicts: &'a [String],
 }
 
 /// A transient line of feedback shown in the footer.
@@ -56,7 +59,10 @@ pub fn draw(frame: &mut Frame, screen: &Screen) {
     let [left, right] =
         Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(body);
 
-    frame.render_widget(state_panel(screen.state, screen.capabilities), left);
+    frame.render_widget(
+        state_panel(screen.state, screen.capabilities, screen.charge_conflicts),
+        left,
+    );
     render_sensors(frame, right, screen.state);
     frame.render_widget(footer_line(screen), footer);
 }
@@ -73,7 +79,11 @@ fn header_line<'a>(screen: &Screen<'a>) -> Paragraph<'a> {
     Paragraph::new(Line::from(spans))
 }
 
-fn state_panel(state: &HwState, caps: Capabilities) -> Paragraph<'_> {
+fn state_panel<'a>(
+    state: &'a HwState,
+    caps: Capabilities,
+    charge_conflicts: &[String],
+) -> Paragraph<'a> {
     // Each row carries the key that changes it, so the panel doubles as the legend.
     let rows = [
         (
@@ -109,7 +119,7 @@ fn state_panel(state: &HwState, caps: Capabilities) -> Paragraph<'_> {
         ("", "Battery", battery_text(state), true),
     ];
 
-    let lines: Vec<Line> = rows
+    let mut lines: Vec<Line> = rows
         .into_iter()
         .map(|(key, label, value, supported)| {
             // Unsupported rows stay visible but muted: knowing that the laptop
@@ -126,6 +136,19 @@ fn state_panel(state: &HwState, caps: Capabilities) -> Paragraph<'_> {
             ])
         })
         .collect();
+
+    // Right under the charge limit it would push the battery line around as the
+    // warning appears and goes; at the bottom the panel keeps its shape.
+    if !charge_conflicts.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            format!(
+                "!    {} also sets the charge limit",
+                charge_conflicts.join(", ")
+            ),
+            Style::new().yellow(),
+        )));
+    }
 
     Paragraph::new(lines).block(
         Block::default()
@@ -335,6 +358,7 @@ mod tests {
         caps: Capabilities,
         status: Option<&'a Status>,
         read_only: bool,
+        charge_conflicts: Vec<String>,
     }
 
     impl<'a> Case<'a> {
@@ -344,6 +368,7 @@ mod tests {
                 caps: all_caps(),
                 status: None,
                 read_only: false,
+                charge_conflicts: Vec::new(),
             }
         }
     }
@@ -365,6 +390,7 @@ mod tests {
                         capabilities: case.caps,
                         status: case.status,
                         read_only: case.read_only,
+                        charge_conflicts: &case.charge_conflicts,
                     },
                 )
             })
@@ -441,6 +467,26 @@ mod tests {
         assert!(
             !read_only.contains("p/f cycle"),
             "offers keys that do nothing"
+        );
+    }
+
+    #[test]
+    fn a_unit_that_overwrites_the_charge_limit_is_named_on_screen() {
+        let state = sample_state();
+
+        let quiet = render(Case::new(&state));
+        assert!(
+            !quiet.contains("also sets the charge limit"),
+            "warns without anything to warn about"
+        );
+
+        let conflicted = render(Case {
+            charge_conflicts: vec!["battery-charge-threshold.service".to_owned()],
+            ..Case::new(&state)
+        });
+        assert!(
+            conflicted.contains("battery-charge-threshold.service"),
+            "the unit doing the overwriting is what the user has to go and disable"
         );
     }
 
