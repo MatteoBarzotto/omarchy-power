@@ -1,0 +1,18 @@
+post_install() {
+    cat <<'MSG'
+The TUI talks to a daemon that is not running yet:
+
+    systemctl enable --now omarchy-powerd.service
+
+Settings live in /etc/omarchy-power/config.toml. On MSI, the attributes come
+from the DKMS msi-ec, not the in-kernel msi_ec.
+MSG
+}
+
+# systemd's own pacman hook has already run daemon-reload by this point; all
+# that is left is telling the user the running daemon is still the old build.
+post_upgrade() {
+    if systemctl is-active --quiet omarchy-powerd.service; then
+        echo "restart the daemon to run the new build: systemctl restart omarchy-powerd.service"
+    fi
+}

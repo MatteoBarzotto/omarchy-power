@@ -63,14 +63,30 @@ Those are defaults, not decisions: the mapping lives in a config file.
 
 ## Install
 
+On Arch, build the package and let pacman own the files. This builds the
+released tarball named in the PKGBUILD, not your checkout:
+
+```
+cd packaging
+makepkg -si
+sudo systemctl enable --now omarchy-powerd.service
+omarchy-power
+```
+
+From a git checkout, without a package:
+
 ```
 cargo build --release
 sudo packaging/install.sh
 omarchy-power
 ```
 
-Two binaries, a systemd unit, a D-Bus policy, a polkit policy and a commented
-config file. `packaging/uninstall.sh` reverses all of it.
+Either way you get two binaries, a systemd unit, a D-Bus policy, a polkit policy
+and a commented config file. `packaging/uninstall.sh` reverses the second one.
+
+The two do not mix: `install.sh` writes to the same paths, and pacman refuses to
+overwrite files it does not own. Run `sudo packaging/uninstall.sh` before your
+first `makepkg -si`.
 
 ## How it fits together
 

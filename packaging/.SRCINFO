@@ -1,0 +1,23 @@
+pkgbase = omarchy-power
+	pkgdesc = Power profiles, fan modes, thermals and charge limits for Linux laptops
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/MatteoBarzotto/omarchy-power
+	install = omarchy-power.install
+	arch = x86_64
+	license = MIT
+	makedepends = cargo
+	depends = gcc-libs
+	depends = glibc
+	depends = dbus
+	depends = polkit
+	depends = systemd
+	optdepends = power-profiles-daemon: follow the active profile instead of setting it by hand
+	optdepends = upower: apply a different power level on battery
+	optdepends = msi-ec-dkms: the MSI backend needs attributes the in-kernel msi_ec does not expose
+	options = !debug
+	backup = etc/omarchy-power/config.toml
+	source = omarchy-power-0.1.0.tar.gz::https://github.com/MatteoBarzotto/omarchy-power/archive/v0.1.0.tar.gz
+	sha256sums = c75c5a1ef26c2c9eaf5602301f19fa2682b9dee5b143ed87097451372f8b5fcd
+
+pkgname = omarchy-power

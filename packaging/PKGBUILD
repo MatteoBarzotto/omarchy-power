@@ -1,0 +1,66 @@
+# Maintainer: Matteo Barzotto <kubson2413@gmail.com>
+
+pkgname=omarchy-power
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Power profiles, fan modes, thermals and charge limits for Linux laptops"
+arch=('x86_64')
+url="https://github.com/MatteoBarzotto/omarchy-power"
+license=('MIT')
+# Nothing links against dbus, polkit or systemd — zbus speaks the protocol
+# itself. They are here because the daemon has no way to run without a system
+# bus, a polkit authority to ask, and systemd to start it.
+depends=('gcc-libs' 'glibc' 'dbus' 'polkit' 'systemd')
+makedepends=('cargo')
+optdepends=(
+    'power-profiles-daemon: follow the active profile instead of setting it by hand'
+    'upower: apply a different power level on battery'
+    'msi-ec-dkms: the MSI backend needs attributes the in-kernel msi_ec does not expose'
+)
+# The release profile carries no DWARF, so a -debug package would ship symbol
+# tables and nothing anyone can debug with.
+options=('!debug')
+backup=('etc/omarchy-power/config.toml')
+install="$pkgname.install"
+source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+sha256sums=('c75c5a1ef26c2c9eaf5602301f19fa2682b9dee5b143ed87097451372f8b5fcd')
+
+prepare() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/^host: //p')"
+}
+
+build() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release --workspace
+}
+
+check() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    # The backend tests read a sysfs dump from fixtures/, so they pass on a
+    # build machine that is not the laptop the package is for.
+    cargo test --frozen --release --workspace
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+
+    install -Dm755 "target/release/omarchy-powerd" "$pkgdir/usr/bin/omarchy-powerd"
+    install -Dm755 "target/release/omarchy-power"  "$pkgdir/usr/bin/omarchy-power"
+
+    install -Dm644 "packaging/org.omarchy.Power1.conf" \
+        "$pkgdir/usr/share/dbus-1/system.d/org.omarchy.Power1.conf"
+    install -Dm644 "packaging/org.omarchy.power1.policy" \
+        "$pkgdir/usr/share/polkit-1/actions/org.omarchy.power1.policy"
+    install -Dm644 "packaging/omarchy-powerd.service" \
+        "$pkgdir/usr/lib/systemd/system/omarchy-powerd.service"
+
+    install -Dm644 "packaging/config.toml" "$pkgdir/etc/omarchy-power/config.toml"
+
+    install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 "README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
