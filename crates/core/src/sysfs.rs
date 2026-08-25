@@ -49,6 +49,27 @@ pub fn exists(path: &Path) -> bool {
     path.exists()
 }
 
+/// Every hwmon directory, in a stable order.
+///
+/// Directory order from the kernel follows probe order, which changes between
+/// boots; sorting keeps a snapshot comparable with the one before it.
+pub fn hwmon_dirs(sysfs_root: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(sysfs_root.join("class/hwmon")) else {
+        return Vec::new();
+    };
+    let mut dirs: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+    dirs.sort();
+    dirs
+}
+
+/// The first hwmon chip matching any of `wanted`, in the caller's order of
+/// preference rather than the kernel's order of probing.
+pub fn hwmon_by_any_name(sysfs_root: &Path, wanted: &[&str]) -> Option<PathBuf> {
+    wanted
+        .iter()
+        .find_map(|name| hwmon_by_name(sysfs_root, name))
+}
+
 /// Find the hwmon directory whose `name` attribute matches, e.g. `msi_wmi_platform`.
 pub fn hwmon_by_name(sysfs_root: &Path, wanted: &str) -> Option<PathBuf> {
     let entries = fs::read_dir(sysfs_root.join("class/hwmon")).ok()?;

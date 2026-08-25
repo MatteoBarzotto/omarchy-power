@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::backend::{Backend, Error, Probe, Result};
 use crate::backends::msi::Msi;
+use crate::backends::platform_profile::PlatformProfile;
 
 /// Where sysfs lives on a running system.
 pub const DEFAULT_SYSFS_ROOT: &str = "/sys";
@@ -31,9 +32,13 @@ pub fn detect() -> Result<Box<dyn Backend>> {
 
 /// Detect the backend for an arbitrary sysfs tree.
 pub fn detect_in(sysfs_root: &Path) -> Result<Box<dyn Backend>> {
-    // Add new vendors here; order matters only if two drivers could match the
-    // same machine, which so far none do.
+    // Vendor backends first, then the kernel's own interfaces. The order is
+    // not cosmetic: an MSI laptop can have both, and the vendor driver reaches
+    // fan modes and cooler boost that `platform_profile` has no idea about.
     if let Some(backend) = Msi::probe(sysfs_root) {
+        return Ok(Box::new(backend));
+    }
+    if let Some(backend) = PlatformProfile::probe(sysfs_root) {
         return Ok(Box::new(backend));
     }
     Err(Error::NoBackend)

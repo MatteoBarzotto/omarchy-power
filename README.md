@@ -165,12 +165,30 @@ OMARCHY_POWER_SYSFS=fixtures/msi-katana cargo run -p omarchy-power
 
 ## Supported hardware
 
-| Vendor | Backend | Tested on |
-|---|---|---|
-| MSI | `msi-ec` | Katana, fw 1587EMS1.106 |
+| Vendor | Backend | Covers | Tested on |
+|---|---|---|---|
+| MSI | `msi-ec` | performance level, fan modes, cooler boost, battery saver, charge limit | Katana, fw 1587EMS1.106 |
+| anything with `platform_profile` | `platform-profile` | performance level, charge limit | fixtures only — no confirmed hardware yet |
 
 On MSI, the in-kernel `msi_ec` does not expose these attributes on most models;
 the DKMS build from the AUR does.
+
+The `platform-profile` backend needs no vendor driver from us: it drives the
+kernel's own `/sys/firmware/acpi/platform_profile` (or the `platform-profile`
+class on 6.14 and later) and the standard `charge_control_end_threshold`, which
+between them cover ThinkPads, Framework, Dell, ASUS and much of HP. It offers
+less than a vendor backend, and honestly so — no standard interface exposes fan
+modes, cooler boost or a battery saver, so it reports those as unsupported
+instead of pretending. A vendor backend always wins detection where both apply.
+
+Whether it works on your machine is exactly what nobody has checked yet:
+
+```
+cat /sys/firmware/acpi/platform_profile_choices
+```
+
+If that prints anything, the backend should drive your laptop — an issue saying
+it did, or did not, is more useful right now than a feature request.
 
 ## Known conflicts
 
