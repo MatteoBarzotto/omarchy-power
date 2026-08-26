@@ -1,7 +1,7 @@
 # Maintainer: Matteo Barzotto <kubson2413@gmail.com>
 
 pkgname=omarchy-power
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Power profiles, fan modes, thermals and charge limits for Linux laptops"
 arch=('x86_64')
