@@ -588,6 +588,56 @@ mod tests {
         );
     }
 
+    /// Prints the screenshot in the README, so it is generated rather than
+    /// drawn by hand and cannot drift away from what the program renders:
+    ///
+    /// ```text
+    /// cargo test -p omarchy-power readme_screenshot -- --ignored --nocapture
+    /// ```
+    ///
+    /// Ignored by default because it asserts nothing — it is a generator that
+    /// happens to live where the renderer does.
+    #[test]
+    #[ignore = "generator for the README screenshot, not a check"]
+    fn readme_screenshot() {
+        let state = HwState {
+            power_level: Some(PowerLevel::Balanced),
+            fan_mode: Some(FanMode::Auto),
+            cooler_boost: Some(false),
+            battery_saver: Some(false),
+            sensors: Sensors {
+                cpu_temp_c: Some(66),
+                gpu_temp_c: Some(51),
+                cpu_fan_percent: Some(70),
+                gpu_fan_percent: Some(40),
+                fan_rpm: vec![3555, 3555, 0, 0],
+            },
+            battery: Battery {
+                capacity_percent: Some(99),
+                charge_end_threshold: Some(80),
+                charge_start_threshold: Some(70),
+                on_ac: Some(true),
+            },
+        };
+        let width = 96;
+        let raw = render_sized(
+            Case {
+                gpu: Gpu {
+                    power_w: Some(14),
+                    power_limit_w: Some(115),
+                    clock_mhz: Some(960),
+                },
+                ..Case::new(&state)
+            },
+            width,
+            14,
+        );
+        let chars: Vec<char> = raw.chars().collect();
+        for row in chars.chunks(width as usize) {
+            println!("{}", row.iter().collect::<String>().trim_end());
+        }
+    }
+
     /// A terminal too small to hold the layout must not panic.
     #[test]
     fn survives_a_tiny_terminal() {

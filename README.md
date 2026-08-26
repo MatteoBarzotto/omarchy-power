@@ -9,18 +9,19 @@ Built on Omarchy, works on any Arch-based system. Hyprland optional.
 
 ```
  omarchy-power  msi-ec  1587EMS1.106
-┌ state ──────────────────────────────┐┌ sensors ────────────────────────────┐
-│                                     ││                                     │
-│   p  Power level    balanced        ││ CPU  66°C  fan 70% ████████ ██      │
-│   f  Fan mode       auto            ││                                     │
-│   b  Cooler boost   off             ││ GPU  51°C  fan 40% ████████         │
-│   s  Battery saver  off             ││                                     │
-│ -/+  Charge limit   80%             ││ fan1: 3555 rpm  fan2: 3555 rpm      │
-│      Battery        99% (on AC)     ││ fan3: 0 rpm  fan4: 0 rpm            │
-│                                     ││                                     │
-│                                     ││                                     │
-└─────────────────────────────────────┘└─────────────────────────────────────┘
- q quit   r refresh   p/f cycle   b/s toggle   -/+ charge limit
+┌ state ───────────────────────────────────────┐┌ sensors ─────────────────────────────────────┐
+│                                              ││                                              │
+│   p  Power level    balanced                 ││ CPU  66°C  fan 70% ████████████ ████         │
+│   f  Fan mode       auto                     ││                                              │
+│   b  Cooler boost   off                      ││ GPU  51°C  fan 40% ████████████              │
+│   s  Battery saver  off                      ││       14 W of 115 W   960 MHz                │
+│ -/+  Charge limit   80%                      ││                                              │
+│ [/]  Resume below   70%                      ││ fan1: 3555 rpm  fan2: 3555 rpm  fan3: 0 rpm  │
+│      Battery        99% (on AC)              ││ fan4: 0 rpm                                  │
+│                                              ││                                              │
+│                                              ││                                              │
+└──────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+ q quit   r refresh   p/f cycle   b/s toggle   -/+ limit   [/] resume
 ```
 
 ## Why this exists
@@ -158,6 +159,12 @@ tar czf my-laptop.tar.gz my-laptop
 
 That captures an explicit list of power-related attributes — no serial numbers,
 no identifiers. Skim it anyway, then open an issue with the archive attached.
+
+The screenshot above is generated, not typed:
+
+```
+cargo test -p omarchy-power readme_screenshot -- --ignored --nocapture
+```
 
 If you write Rust, `crates/core/src/backend.rs` holds the trait and
 `crates/core/src/backends/msi.rs` is a worked example. Point the binaries at a
