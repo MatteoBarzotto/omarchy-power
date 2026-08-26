@@ -1,5 +1,6 @@
 //! Rendering. Read-only for now: the daemon that accepts changes lands next.
 
+use omarchy_power_core::gpu::Gpu;
 use omarchy_power_core::types::{Capabilities, FanMode, HwState, PowerLevel};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
@@ -22,6 +23,10 @@ pub struct Screen<'a> {
     /// Units that rewrite the charge threshold at boot. Shown next to the
     /// charge limit, because the setting looks lost rather than overridden.
     pub charge_conflicts: &'a [String],
+    /// What the discrete GPU reports. Read-only: `nvidia-powerd` owns this
+    /// budget, and the display exists so its work is visible rather than
+    /// mysterious.
+    pub gpu: &'a Gpu,
 }
 
 /// A transient line of feedback shown in the footer.
@@ -63,7 +68,7 @@ pub fn draw(frame: &mut Frame, screen: &Screen) {
         state_panel(screen.state, screen.capabilities, screen.charge_conflicts),
         left,
     );
-    render_sensors(frame, right, screen.state);
+    render_sensors(frame, right, screen.state, screen.gpu);
     frame.render_widget(footer_line(screen), footer);
 }
 
@@ -158,7 +163,7 @@ fn state_panel<'a>(
     )
 }
 
-fn render_sensors(frame: &mut Frame, area: Rect, state: &HwState) {
+fn render_sensors(frame: &mut Frame, area: Rect, state: &HwState, gpu: &Gpu) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(" sensors ")
@@ -167,8 +172,11 @@ fn render_sensors(frame: &mut Frame, area: Rect, state: &HwState) {
     frame.render_widget(block, area);
 
     // One row per gauge with a blank row between: a two-row gauge puts its
-    // label halfway up the bar, which reads badly.
-    let [cpu, _, gpu, _, fans] = Layout::vertical([
+    // label halfway up the bar, which reads badly. The GPU's own readings go
+    // directly under its gauge, with no blank between, so they read as part of
+    // the same thing.
+    let [cpu, _, gpu_temp, gpu_power, _, fans] = Layout::vertical([
+        Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -186,11 +194,17 @@ fn render_sensors(frame: &mut Frame, area: Rect, state: &HwState) {
     );
     render_temp(
         frame,
-        gpu,
+        gpu_temp,
         "GPU",
         state.sensors.gpu_temp_c,
         state.sensors.gpu_fan_percent,
     );
+    if let Some(text) = gpu_draw_text(gpu) {
+        frame.render_widget(
+            Paragraph::new(Span::styled(text, Style::new().dark_gray())),
+            gpu_power,
+        );
+    }
 
     let rpm: Vec<String> = state
         .sensors
@@ -209,6 +223,28 @@ fn render_sensors(frame: &mut Frame, area: Rect, state: &HwState) {
             .wrap(ratatui::widgets::Wrap { trim: true }),
         fans,
     );
+}
+
+/// The GPU's power and clock, or nothing at all on a machine without one.
+///
+/// The ceiling is worth showing next to the draw because on a Dynamic Boost
+/// laptop it moves: seeing 13 W of 115 W is the difference between "the GPU is
+/// idle" and "something is holding it down".
+fn gpu_draw_text(gpu: &Gpu) -> Option<String> {
+    let power = match (gpu.power_w, gpu.power_limit_w) {
+        (Some(draw), Some(limit)) => Some(format!("{draw} W of {limit} W")),
+        (Some(draw), None) => Some(format!("{draw} W")),
+        (None, Some(limit)) => Some(format!("up to {limit} W")),
+        (None, None) => None,
+    };
+    let clock = gpu.clock_mhz.map(|mhz| format!("{mhz} MHz"));
+    let text = match (power, clock) {
+        (Some(power), Some(clock)) => format!("{power}   {clock}"),
+        (Some(one), None) | (None, Some(one)) => one,
+        (None, None) => return None,
+    };
+    // Indented to sit under the label of the gauge above it.
+    Some(format!("      {text}"))
 }
 
 fn render_temp(frame: &mut Frame, area: Rect, label: &str, temp: Option<u8>, fan: Option<u8>) {
@@ -359,6 +395,7 @@ mod tests {
         status: Option<&'a Status>,
         read_only: bool,
         charge_conflicts: Vec<String>,
+        gpu: Gpu,
     }
 
     impl<'a> Case<'a> {
@@ -369,6 +406,7 @@ mod tests {
                 status: None,
                 read_only: false,
                 charge_conflicts: Vec::new(),
+                gpu: Gpu::default(),
             }
         }
     }
@@ -391,6 +429,7 @@ mod tests {
                         status: case.status,
                         read_only: case.read_only,
                         charge_conflicts: &case.charge_conflicts,
+                        gpu: &case.gpu,
                     },
                 )
             })
@@ -487,6 +526,48 @@ mod tests {
         assert!(
             conflicted.contains("battery-charge-threshold.service"),
             "the unit doing the overwriting is what the user has to go and disable"
+        );
+    }
+
+    #[test]
+    fn the_gpu_reports_its_own_power_and_clock_when_it_has_them() {
+        let state = sample_state();
+
+        let without = render(Case::new(&state));
+        assert!(
+            !without.contains("MHz"),
+            "a machine with no discrete GPU should show no GPU readings at all"
+        );
+
+        let with = render(Case {
+            gpu: Gpu {
+                power_w: Some(13),
+                power_limit_w: Some(115),
+                clock_mhz: Some(1057),
+            },
+            ..Case::new(&state)
+        });
+        // The ceiling matters as much as the draw: on a Dynamic Boost laptop
+        // it moves, and seeing both is the point of the line.
+        assert!(with.contains("13 W of 115 W"), "draw and ceiling not shown");
+        assert!(with.contains("1057 MHz"), "clock not shown");
+    }
+
+    #[test]
+    fn a_gpu_that_reports_no_ceiling_still_shows_what_it_draws() {
+        let state = sample_state();
+        let rendered = render(Case {
+            gpu: Gpu {
+                power_w: Some(40),
+                power_limit_w: None,
+                clock_mhz: None,
+            },
+            ..Case::new(&state)
+        });
+        assert!(rendered.contains("40 W"));
+        assert!(
+            !rendered.contains(" of "),
+            "invented a ceiling it never gave"
         );
     }
 

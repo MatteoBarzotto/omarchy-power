@@ -107,7 +107,7 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, source: &Source) -> Resul
     let read_only = source.is_read_only();
     let charge_conflicts = source.charge_conflicts().to_vec();
 
-    let mut state = source.snapshot()?;
+    let (mut state, mut gpu) = source.snapshot()?;
     let mut footer = Footer {
         status: None,
         since: Instant::now(),
@@ -125,6 +125,7 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, source: &Source) -> Resul
                     status: footer.status.as_ref(),
                     read_only,
                     charge_conflicts: &charge_conflicts,
+                    gpu: &gpu,
                 },
             );
         })?;
@@ -152,7 +153,10 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, source: &Source) -> Resul
         // busy talking to the firmware returns errors now and then and the
         // display should not flicker because of it.
         match source.snapshot() {
-            Ok(fresh) => state = fresh,
+            Ok((fresh, fresh_gpu)) => {
+                state = fresh;
+                gpu = fresh_gpu;
+            }
             Err(e) => footer.set(Status::failed(e.to_string())),
         }
         footer.expire();

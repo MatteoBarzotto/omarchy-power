@@ -12,6 +12,7 @@ use std::collections::HashMap;
 
 use zvariant::{OwnedValue, Value};
 
+use crate::gpu::Gpu;
 use crate::types::{Battery, Capabilities, FanMode, HwState, PowerLevel, Sensors};
 
 pub const POWER_LEVEL: &str = "power-level";
@@ -26,6 +27,11 @@ pub const FAN_RPM: &str = "fan-rpm";
 pub const BATTERY_CAPACITY: &str = "battery-capacity";
 pub const CHARGE_END_THRESHOLD: &str = "charge-end-threshold";
 pub const ON_AC: &str = "on-ac";
+/// The discrete GPU's own readings, which come from the driver rather than
+/// from a backend — see [`crate::gpu`]. Absent on machines without one.
+pub const GPU_POWER: &str = "gpu-power-w";
+pub const GPU_POWER_LIMIT: &str = "gpu-power-limit-w";
+pub const GPU_CLOCK: &str = "gpu-clock-mhz";
 
 pub type Dict = HashMap<String, OwnedValue>;
 
@@ -78,6 +84,26 @@ pub fn state_from_dict(dict: &Dict) -> HwState {
             charge_end_threshold: get(dict, CHARGE_END_THRESHOLD),
             on_ac: get(dict, ON_AC),
         },
+    }
+}
+
+/// Add the GPU's readings to a snapshot, omitting whatever it does not report.
+///
+/// Kept apart from [`state_to_dict`] because this is not backend data: the
+/// backend has a sysfs root and nothing else, and no NVIDIA reading arrives
+/// that way. The daemon calls both; the shared dictionary is where they meet.
+pub fn gpu_into_dict(dict: &mut Dict, gpu: &Gpu) {
+    insert_opt(dict, GPU_POWER, gpu.power_w);
+    insert_opt(dict, GPU_POWER_LIMIT, gpu.power_limit_w);
+    insert_opt(dict, GPU_CLOCK, gpu.clock_mhz);
+}
+
+/// Decode the GPU's readings. All absent on a machine without one.
+pub fn gpu_from_dict(dict: &Dict) -> Gpu {
+    Gpu {
+        power_w: get(dict, GPU_POWER),
+        power_limit_w: get(dict, GPU_POWER_LIMIT),
+        clock_mhz: get(dict, GPU_CLOCK),
     }
 }
 

@@ -8,6 +8,7 @@
 pub mod backend;
 pub mod backends;
 pub mod detect;
+pub mod gpu;
 pub mod sysfs;
 pub mod types;
 
@@ -16,4 +17,5 @@ pub mod wire;
 
 pub use backend::{Backend, Error, Probe, Result};
 pub use detect::{detect, detect_in};
+pub use gpu::Gpu;
 pub use types::{Battery, Capabilities, FanMode, HwProfile, HwState, PowerLevel, Sensors};

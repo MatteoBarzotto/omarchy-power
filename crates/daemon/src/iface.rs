@@ -15,6 +15,7 @@ use zbus::{fdo, interface};
 
 use crate::auth::{self, Authority};
 use crate::engine::Engine;
+use crate::gpu::GpuReader;
 
 pub const NAME: &str = "org.omarchy.Power1";
 pub const PATH: &str = "/org/omarchy/Power1";
@@ -22,6 +23,8 @@ pub const PATH: &str = "/org/omarchy/Power1";
 pub struct Power {
     engine: Arc<Engine>,
     authority: Authority,
+    /// The discrete GPU's readings, cached — see [`GpuReader`].
+    gpu: GpuReader,
     /// Units that also write the charge threshold, as found at startup.
     ///
     /// Read once rather than on every property read: enabling a unit is a
@@ -35,6 +38,7 @@ impl Power {
         Self {
             engine,
             authority,
+            gpu: GpuReader::new(),
             charge_conflicts,
         }
     }
@@ -59,7 +63,11 @@ impl Power {
     /// second, and a dozen round trips per second for a dozen values is silly.
     fn snapshot(&self) -> fdo::Result<wire::Dict> {
         let state = self.engine.backend().read_state().map_err(to_fdo)?;
-        Ok(wire::state_to_dict(&state))
+        let mut dict = wire::state_to_dict(&state);
+        // The GPU is not backend data and cannot fail the call: a machine
+        // without one simply adds no keys.
+        wire::gpu_into_dict(&mut dict, &self.gpu.read());
+        Ok(dict)
     }
 
     async fn set_power_level(

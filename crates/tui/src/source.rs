@@ -6,6 +6,7 @@
 //! is how contributed hardware dumps get eyeballed.
 
 use anyhow::{Context, Result, bail};
+use omarchy_power_core::gpu::Gpu;
 use omarchy_power_core::types::{Capabilities, FanMode, HwState, PowerLevel};
 use omarchy_power_core::{Backend, detect, wire};
 
@@ -132,10 +133,17 @@ impl Source {
         }
     }
 
-    pub fn snapshot(&self) -> Result<HwState> {
+    /// One call returns both, because they arrive in one dictionary and a
+    /// second round trip for the GPU would double the traffic for nothing.
+    pub fn snapshot(&self) -> Result<(HwState, Gpu)> {
         match self {
-            Self::Daemon { proxy, .. } => Ok(wire::state_from_dict(&proxy.snapshot()?)),
-            Self::Local { backend, .. } => Ok(backend.read_state()?),
+            Self::Daemon { proxy, .. } => {
+                let dict = proxy.snapshot()?;
+                Ok((wire::state_from_dict(&dict), wire::gpu_from_dict(&dict)))
+            }
+            // The read-only fallback has no daemon to ask, and reading the GPU
+            // here would mean the TUI running a process of its own.
+            Self::Local { backend, .. } => Ok((backend.read_state()?, Gpu::default())),
         }
     }
 

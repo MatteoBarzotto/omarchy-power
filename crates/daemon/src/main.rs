@@ -7,6 +7,7 @@ mod auth;
 mod config;
 mod conflicts;
 mod engine;
+mod gpu;
 mod iface;
 mod watch;
 
