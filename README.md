@@ -63,6 +63,7 @@ Those are defaults, not decisions: the mapping lives in a config file.
   couples the two — moving one drags the other along, keeping a ten-point gap.
 - Automatic profile changes: a different profile on battery, if you want one.
 - A thermal guard that will not let a quiet fan profile cook the machine.
+- Optional: a profile that follows the window you are working in.
 
 ## Install
 
@@ -200,6 +201,49 @@ cat /sys/firmware/acpi/platform_profile_choices
 
 If that prints anything, the backend should drive your laptop — an issue saying
 it did, or did not, is more useful right now than a feature request.
+
+## Following the active window
+
+`omarchy-power autoprofile` watches which window has focus and asks
+power-profiles-daemon to hold a matching profile. Rules live in
+`~/.config/omarchy-power/autoprofile.toml`:
+
+```toml
+# What to hold when nothing below matches. Omit it to hold nothing at all,
+# leaving the profile to you and your desktop.
+default = "balanced"
+
+[classes]
+"steam_app_*" = "performance"
+"gamescope"   = "performance"
+"org.omarchy.screensaver" = "power-saver"
+```
+
+A key ending in `*` matches any class starting with the rest of it, and the
+longest match wins — so `steam_app_*` and `steam_app_570` can both be listed and
+the specific one decides, whatever order they appear in. `hyprctl activewindow`
+prints the class of whatever you are looking at.
+
+Start it with your session:
+
+```
+# ~/.config/hypr/hyprland.conf
+exec-once = omarchy-power autoprofile
+```
+
+It runs unprivileged in your session, because the compositor's socket lives in
+your runtime directory and a root daemon has no business reaching in there. It
+sets no hardware itself: it holds a PPD profile, which the daemon then applies,
+along with your desktop's own indicator and anything else that follows PPD. A
+hold also ends by itself if the process dies, so a crashed watcher cannot leave
+a laptop pinned to `performance`.
+
+Two things worth knowing before you turn it on. A profile changing under your
+hands is surprising, which is why there is no default rules file and nothing
+happens until you write one. And when the last hold is released,
+power-profiles-daemon returns to its own default rather than to the profile you
+had selected before — on this machine, releasing a hold left it in `balanced`
+even though `performance` had been chosen by hand.
 
 ## Known conflicts
 

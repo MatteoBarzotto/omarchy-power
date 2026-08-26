@@ -1004,6 +1004,8 @@ dependencies = [
  "anyhow",
  "omarchy-power-core",
  "ratatui",
+ "serde",
+ "toml",
  "zbus",
 ]
 

@@ -6,6 +6,7 @@
 //! read-only.
 
 mod actions;
+mod autoprofile;
 mod dump;
 mod source;
 mod ui;
@@ -28,6 +29,7 @@ fn main() -> Result<()> {
     match Cli::parse(std::env::args().skip(1))? {
         Cli::Tui => run_tui(),
         Cli::DumpFixture(dest) => dump::run(&dest),
+        Cli::AutoProfile => autoprofile::run(),
         Cli::Help => {
             print_help();
             Ok(())
@@ -38,6 +40,7 @@ fn main() -> Result<()> {
 enum Cli {
     Tui,
     DumpFixture(PathBuf),
+    AutoProfile,
     Help,
 }
 
@@ -49,6 +52,7 @@ impl Cli {
                 args.next()
                     .map_or_else(|| PathBuf::from("omarchy-power-fixture"), PathBuf::from),
             )),
+            Some("autoprofile") => Ok(Self::AutoProfile),
             Some("-h" | "--help" | "help") => Ok(Self::Help),
             Some(other) => anyhow::bail!("unknown command `{other}` (try --help)"),
         }
@@ -62,6 +66,8 @@ fn print_help() {
 USAGE:
     omarchy-power                     open the TUI
     omarchy-power dump-fixture [DIR]  capture this machine's sysfs attributes
+    omarchy-power autoprofile         follow the active window, holding a
+                                      power-profiles-daemon profile to match
 
 The TUI talks to omarchy-powerd over D-Bus. Without it, hardware is shown
 read-only.
