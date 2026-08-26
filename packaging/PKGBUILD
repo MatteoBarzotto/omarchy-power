@@ -23,7 +23,7 @@ options=('!debug')
 backup=('etc/omarchy-power/config.toml')
 install="$pkgname.install"
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-sha256sums=('c75c5a1ef26c2c9eaf5602301f19fa2682b9dee5b143ed87097451372f8b5fcd')
+sha256sums=('d8cf859a18396563b23b6ed4cf9000a13fced9a9f133d572fb029dc07025d33c')
 
 prepare() {
     cd "$pkgname-$pkgver"
