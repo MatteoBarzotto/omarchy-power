@@ -121,6 +121,12 @@ fn state_panel<'a>(
             charge_text(state),
             caps.charge_threshold,
         ),
+        (
+            "[/]",
+            "Resume below",
+            charge_start_text(state),
+            caps.charge_start_threshold,
+        ),
         ("", "Battery", battery_text(state), true),
     ];
 
@@ -321,6 +327,15 @@ fn charge_text(state: &HwState) -> String {
         .map_or_else(|| "unsupported".to_owned(), |t| format!("{t}%"))
 }
 
+/// Where charging starts again — the half of a charge limit that stops a
+/// battery on mains from cycling 79-80-79 all day.
+fn charge_start_text(state: &HwState) -> String {
+    state
+        .battery
+        .charge_start_threshold
+        .map_or_else(|| "unsupported".to_owned(), |t| format!("{t}%"))
+}
+
 fn battery_text(state: &HwState) -> String {
     let capacity = state
         .battery
@@ -346,7 +361,7 @@ fn footer_line<'a>(screen: &Screen<'a>) -> Paragraph<'a> {
     let hint = if screen.read_only {
         " q quit   r refresh   read-only: omarchy-powerd is not running"
     } else {
-        " q quit   r refresh   p/f cycle   b/s toggle   -/+ charge limit"
+        " q quit   r refresh   p/f cycle   b/s toggle   -/+ limit   [/] resume"
     };
     Paragraph::new(Span::styled(hint, Style::new().dark_gray()))
 }
@@ -374,6 +389,7 @@ mod tests {
             battery: Battery {
                 capacity_percent: Some(99),
                 charge_end_threshold: Some(80),
+                charge_start_threshold: Some(75),
                 on_ac: Some(true),
             },
         }
@@ -386,6 +402,7 @@ mod tests {
             cooler_boost: true,
             battery_saver: true,
             charge_threshold: true,
+            charge_start_threshold: true,
         }
     }
 

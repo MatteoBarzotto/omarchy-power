@@ -183,6 +183,10 @@ fn perform(source: &Source, action: Action) -> Option<Status> {
             source.set_charge_end_threshold(percent),
             format!("charge limit: {percent}%"),
         ),
+        Action::SetChargeStartThreshold(percent) => (
+            source.set_charge_start_threshold(percent),
+            format!("charging resumes below: {percent}%"),
+        ),
         // Handled by the caller; nothing to send anywhere.
         Action::Quit | Action::Refresh | Action::Ignored | Action::Unsupported(_) => return None,
     };

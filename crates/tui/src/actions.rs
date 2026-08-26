@@ -22,6 +22,7 @@ pub enum Action {
     SetCoolerBoost(bool),
     SetBatterySaver(bool),
     SetChargeThreshold(u8),
+    SetChargeStartThreshold(u8),
     /// The key maps to something this machine cannot do.
     Unsupported(&'static str),
     /// The key means nothing here.
@@ -48,6 +49,8 @@ pub fn for_key(code: KeyCode, state: &HwState, caps: Capabilities) -> Action {
 
         KeyCode::Char('+' | '=') => charge(state, caps, CHARGE_STEP as i16),
         KeyCode::Char('-' | '_') => charge(state, caps, -(CHARGE_STEP as i16)),
+        KeyCode::Char(']') => charge_start(state, caps, CHARGE_STEP as i16),
+        KeyCode::Char('[') => charge_start(state, caps, -(CHARGE_STEP as i16)),
 
         _ => Action::Ignored,
     }
@@ -76,6 +79,26 @@ fn charge(state: &HwState, caps: Capabilities, delta: i16) -> Action {
     Action::SetChargeThreshold(next as u8)
 }
 
+/// Step the point where charging resumes.
+///
+/// Clamped one step below the end threshold rather than at [`CHARGE_MAX`]: the
+/// kernel refuses a start at or above the end, and a key that silently produces
+/// a rejected write is worse than one that stops moving.
+fn charge_start(state: &HwState, caps: Capabilities, delta: i16) -> Action {
+    if !caps.charge_start_threshold {
+        return Action::Unsupported("a start threshold");
+    }
+    let Some(current) = state.battery.charge_start_threshold else {
+        return Action::Ignored;
+    };
+    let ceiling = state
+        .battery
+        .charge_end_threshold
+        .map_or(i16::from(CHARGE_MAX), |end| i16::from(end) - 1);
+    let next = (i16::from(current) + delta).clamp(CHARGE_MIN.into(), ceiling);
+    Action::SetChargeStartThreshold(next as u8)
+}
+
 /// The next value in a fixed cycle, wrapping around.
 ///
 /// An unknown current value starts the cycle from the beginning, which is what
@@ -99,6 +122,7 @@ mod tests {
             cooler_boost: true,
             battery_saver: true,
             charge_threshold: true,
+            charge_start_threshold: true,
         }
     }
 

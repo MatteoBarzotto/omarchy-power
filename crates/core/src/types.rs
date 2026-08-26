@@ -40,6 +40,10 @@ pub struct Capabilities {
     pub cooler_boost: bool,
     pub battery_saver: bool,
     pub charge_threshold: bool,
+    /// Separate from `charge_threshold`: some drivers expose where charging
+    /// stops but not where it starts, and offering a key that cannot work is
+    /// worse than showing the row greyed out.
+    pub charge_start_threshold: bool,
 }
 
 /// Live sensor readings. Every field is optional because coverage varies wildly
@@ -62,6 +66,11 @@ pub struct Battery {
     pub capacity_percent: Option<u8>,
     /// Charging stops at this percentage.
     pub charge_end_threshold: Option<u8>,
+    /// Charging does not resume until the battery falls to this percentage.
+    ///
+    /// Without it a battery held on mains oscillates around the end threshold —
+    /// 79, charge, 80, stop, 79 — which is the wear the limit exists to avoid.
+    pub charge_start_threshold: Option<u8>,
     pub on_ac: Option<bool>,
 }
 
@@ -89,6 +98,7 @@ pub struct HwProfile {
     pub cooler_boost: Option<bool>,
     pub battery_saver: Option<bool>,
     pub charge_end_threshold: Option<u8>,
+    pub charge_start_threshold: Option<u8>,
 }
 
 impl HwProfile {

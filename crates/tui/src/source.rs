@@ -22,6 +22,7 @@ pub(crate) trait Power {
     fn set_cooler_boost(&self, on: bool) -> zbus::Result<()>;
     fn set_battery_saver(&self, on: bool) -> zbus::Result<()>;
     fn set_charge_end_threshold(&self, percent: u8) -> zbus::Result<()>;
+    fn set_charge_start_threshold(&self, percent: u8) -> zbus::Result<()>;
 
     #[zbus(property)]
     fn backend_name(&self) -> zbus::Result<String>;
@@ -169,6 +170,11 @@ impl Source {
 
     pub fn set_charge_end_threshold(&self, percent: u8) -> Result<()> {
         self.proxy()?.set_charge_end_threshold(percent)?;
+        Ok(())
+    }
+
+    pub fn set_charge_start_threshold(&self, percent: u8) -> Result<()> {
+        self.proxy()?.set_charge_start_threshold(percent)?;
         Ok(())
     }
 

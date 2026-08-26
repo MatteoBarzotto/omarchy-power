@@ -79,6 +79,7 @@ fn only_what_the_kernel_defines_is_claimed_as_a_capability() {
         .capabilities();
     assert!(caps.power_level);
     assert!(caps.charge_threshold);
+    assert!(caps.charge_start_threshold);
     // No standard interface exposes these, so they must not be offered.
     assert!(!caps.fan_mode);
     assert!(!caps.cooler_boost);

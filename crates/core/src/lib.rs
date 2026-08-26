@@ -7,6 +7,7 @@
 
 pub mod backend;
 pub mod backends;
+pub mod battery;
 pub mod detect;
 pub mod gpu;
 pub mod sysfs;

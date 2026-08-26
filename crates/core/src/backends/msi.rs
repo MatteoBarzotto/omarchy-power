@@ -2,12 +2,20 @@
 //!
 //! Note for anyone reproducing this: the in-kernel `msi_ec` does not expose
 //! these attributes on most models. The AUR/DKMS build of `msi-ec` does.
+//!
+//! The charge thresholds on this firmware are **coupled**: writing the start
+//! threshold moves the end one to keep a fixed ten-point gap, and vice versa.
+//! Measured on a Katana with msi-ec 0.13 — start 75 leaves end at 85, start 60
+//! leaves end at 70. Nothing here enforces or undoes that; the pair is read
+//! back from the hardware after every write, so both rows on screen simply
+//! show what the firmware settled on. A fixture cannot reproduce it, since a
+//! file in a captured tree has no driver behind it to move its neighbour.
 
 use std::path::{Path, PathBuf};
 
 use crate::backend::{Backend, Error, Probe, Result};
-use crate::sysfs;
-use crate::types::{Battery, Capabilities, FanMode, HwProfile, HwState, PowerLevel, Sensors};
+use crate::types::{Capabilities, FanMode, HwProfile, HwState, PowerLevel, Sensors};
+use crate::{battery, sysfs};
 
 const EC: &str = "devices/platform/msi-ec";
 const HWMON: &str = "msi_wmi_platform";
@@ -80,35 +88,6 @@ impl Msi {
             .map_while(|i| sysfs::read_parsed::<u32>(&hwmon.join(format!("fan{i}_input"))))
             .collect()
     }
-
-    fn read_battery(&self) -> Battery {
-        let mut battery = Battery {
-            on_ac: self
-                .mains
-                .as_ref()
-                .and_then(|m| sysfs::read_parsed::<u8>(&m.join("online")))
-                .map(|v| v == 1),
-            ..Battery::default()
-        };
-        if let Some(bat) = &self.battery {
-            battery.capacity_percent = sysfs::read_parsed(&bat.join("capacity"));
-            battery.charge_end_threshold =
-                sysfs::read_parsed(&bat.join("charge_control_end_threshold"));
-        }
-        battery
-    }
-
-    /// Reject thresholds the kernel would refuse anyway, with a better message.
-    fn check_threshold(value: u8) -> Result<()> {
-        if (20..=100).contains(&value) {
-            Ok(())
-        } else {
-            Err(Error::BadValue(
-                "charge threshold",
-                format!("{value} (expected 20-100)"),
-            ))
-        }
-    }
 }
 
 impl Probe for Msi {
@@ -123,14 +102,14 @@ impl Probe for Msi {
         let battery = sysfs::power_supplies_of_type(sysfs_root, "Battery")
             .into_iter()
             .next();
+        let (can_end, can_start) = battery::capabilities(battery.as_deref());
         let caps = Capabilities {
             power_level: true,
             fan_mode: sysfs::exists(&ec.join("fan_mode")),
             cooler_boost: sysfs::exists(&ec.join("cooler_boost")),
             battery_saver: sysfs::exists(&ec.join("super_battery")),
-            charge_threshold: battery
-                .as_ref()
-                .is_some_and(|b| sysfs::exists(&b.join("charge_control_end_threshold"))),
+            charge_threshold: can_end,
+            charge_start_threshold: can_start,
         };
 
         Some(Self {
@@ -175,7 +154,7 @@ impl Backend for Msi {
                 gpu_fan_percent: sysfs::read_parsed(&self.attr("gpu/realtime_fan_speed")),
                 fan_rpm: self.read_fan_rpm(),
             },
-            battery: self.read_battery(),
+            battery: battery::read(self.battery.as_deref(), self.mains.as_deref()),
         })
     }
 
@@ -201,18 +180,10 @@ impl Backend for Msi {
             }
             sysfs::write(&self.attr("super_battery"), if on { "on" } else { "off" })?;
         }
-        if let Some(threshold) = profile.charge_end_threshold {
-            let battery = self
-                .battery
-                .as_ref()
-                .filter(|_| self.caps.charge_threshold)
-                .ok_or(Error::Unsupported("charge thresholds"))?;
-            Self::check_threshold(threshold)?;
-            sysfs::write(
-                &battery.join("charge_control_end_threshold"),
-                &threshold.to_string(),
-            )?;
-        }
-        Ok(())
+        battery::apply(
+            self.battery.as_deref(),
+            (self.caps.charge_threshold, self.caps.charge_start_threshold),
+            profile,
+        )
     }
 }

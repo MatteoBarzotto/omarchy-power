@@ -26,6 +26,7 @@ pub const GPU_FAN: &str = "gpu-fan-percent";
 pub const FAN_RPM: &str = "fan-rpm";
 pub const BATTERY_CAPACITY: &str = "battery-capacity";
 pub const CHARGE_END_THRESHOLD: &str = "charge-end-threshold";
+pub const CHARGE_START_THRESHOLD: &str = "charge-start-threshold";
 pub const ON_AC: &str = "on-ac";
 /// The discrete GPU's own readings, which come from the driver rather than
 /// from a backend — see [`crate::gpu`]. Absent on machines without one.
@@ -56,6 +57,11 @@ pub fn state_to_dict(state: &HwState) -> Dict {
         CHARGE_END_THRESHOLD,
         state.battery.charge_end_threshold,
     );
+    insert_opt(
+        &mut dict,
+        CHARGE_START_THRESHOLD,
+        state.battery.charge_start_threshold,
+    );
     insert_opt(&mut dict, ON_AC, state.battery.on_ac);
 
     // An empty fan list is meaningful — "this machine has no tachometers" — so
@@ -82,6 +88,7 @@ pub fn state_from_dict(dict: &Dict) -> HwState {
         battery: Battery {
             capacity_percent: get(dict, BATTERY_CAPACITY),
             charge_end_threshold: get(dict, CHARGE_END_THRESHOLD),
+            charge_start_threshold: get(dict, CHARGE_START_THRESHOLD),
             on_ac: get(dict, ON_AC),
         },
     }
@@ -115,6 +122,10 @@ pub fn caps_to_dict(caps: &Capabilities) -> HashMap<String, bool> {
         (COOLER_BOOST.to_owned(), caps.cooler_boost),
         (BATTERY_SAVER.to_owned(), caps.battery_saver),
         (CHARGE_END_THRESHOLD.to_owned(), caps.charge_threshold),
+        (
+            CHARGE_START_THRESHOLD.to_owned(),
+            caps.charge_start_threshold,
+        ),
     ])
 }
 
@@ -126,6 +137,7 @@ pub fn caps_from_dict(dict: &HashMap<String, bool>) -> Capabilities {
         cooler_boost: flag(COOLER_BOOST),
         battery_saver: flag(BATTERY_SAVER),
         charge_threshold: flag(CHARGE_END_THRESHOLD),
+        charge_start_threshold: flag(CHARGE_START_THRESHOLD),
     }
 }
 
@@ -180,6 +192,7 @@ mod tests {
             battery: Battery {
                 capacity_percent: Some(99),
                 charge_end_threshold: Some(80),
+                charge_start_threshold: Some(75),
                 on_ac: Some(true),
             },
         }
@@ -224,6 +237,7 @@ mod tests {
             cooler_boost: false,
             battery_saver: true,
             charge_threshold: false,
+            charge_start_threshold: true,
         };
         assert_eq!(caps_from_dict(&caps_to_dict(&caps)), caps);
     }

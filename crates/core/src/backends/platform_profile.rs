@@ -15,8 +15,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::backend::{Backend, Error, Probe, Result};
-use crate::sysfs;
-use crate::types::{Battery, Capabilities, HwProfile, HwState, PowerLevel, Sensors};
+use crate::types::{Capabilities, HwProfile, HwState, PowerLevel, Sensors};
+use crate::{battery, sysfs};
 
 /// The original single-file interface, still present on every kernel that has
 /// the newer one.
@@ -136,35 +136,6 @@ impl PlatformProfile {
             })
             .collect()
     }
-
-    fn read_battery(&self) -> Battery {
-        let mut battery = Battery {
-            on_ac: self
-                .mains
-                .as_ref()
-                .and_then(|m| sysfs::read_parsed::<u8>(&m.join("online")))
-                .map(|v| v == 1),
-            ..Battery::default()
-        };
-        if let Some(bat) = &self.battery {
-            battery.capacity_percent = sysfs::read_parsed(&bat.join("capacity"));
-            battery.charge_end_threshold =
-                sysfs::read_parsed(&bat.join("charge_control_end_threshold"));
-        }
-        battery
-    }
-
-    /// Reject thresholds the kernel would refuse anyway, with a better message.
-    fn check_threshold(value: u8) -> Result<()> {
-        if (20..=100).contains(&value) {
-            Ok(())
-        } else {
-            Err(Error::BadValue(
-                "charge threshold",
-                format!("{value} (expected 20-100)"),
-            ))
-        }
-    }
 }
 
 impl Probe for PlatformProfile {
@@ -185,15 +156,15 @@ impl Probe for PlatformProfile {
         let battery = sysfs::power_supplies_of_type(sysfs_root, "Battery")
             .into_iter()
             .next();
+        let (can_end, can_start) = battery::capabilities(battery.as_deref());
         let caps = Capabilities {
             power_level: true,
             // Nothing standard exposes these; see the module comment.
             fan_mode: false,
             cooler_boost: false,
             battery_saver: false,
-            charge_threshold: battery
-                .as_ref()
-                .is_some_and(|b| sysfs::exists(&b.join("charge_control_end_threshold"))),
+            charge_threshold: can_end,
+            charge_start_threshold: can_start,
         };
 
         Some(Self {
@@ -238,7 +209,7 @@ impl Backend for PlatformProfile {
                 gpu_fan_percent: None,
                 fan_rpm: Self::read_fan_rpm(&self.root),
             },
-            battery: self.read_battery(),
+            battery: battery::read(self.battery.as_deref(), self.mains.as_deref()),
         })
     }
 
@@ -258,18 +229,10 @@ impl Backend for PlatformProfile {
         if profile.battery_saver.is_some() {
             return Err(Error::Unsupported("battery saver"));
         }
-        if let Some(threshold) = profile.charge_end_threshold {
-            let battery = self
-                .battery
-                .as_ref()
-                .filter(|_| self.caps.charge_threshold)
-                .ok_or(Error::Unsupported("charge thresholds"))?;
-            Self::check_threshold(threshold)?;
-            sysfs::write(
-                &battery.join("charge_control_end_threshold"),
-                &threshold.to_string(),
-            )?;
-        }
-        Ok(())
+        battery::apply(
+            self.battery.as_deref(),
+            (self.caps.charge_threshold, self.caps.charge_start_threshold),
+            profile,
+        )
     }
 }

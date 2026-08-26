@@ -144,6 +144,27 @@ impl Power {
         .await
     }
 
+    /// Where charging resumes, which is the other half of a charge limit.
+    ///
+    /// Same polkit action as the end threshold: both outlive the session and
+    /// affect the battery over months, and splitting them would mean two
+    /// prompts for what a user thinks of as one setting.
+    async fn set_charge_start_threshold(
+        &self,
+        percent: u8,
+        #[zbus(header)] hdr: Header<'_>,
+    ) -> fdo::Result<()> {
+        self.guarded_apply(
+            &hdr,
+            auth::SET_CHARGE_THRESHOLD,
+            HwProfile {
+                charge_start_threshold: Some(percent),
+                ..HwProfile::default()
+            },
+        )
+        .await
+    }
+
     /// Which backend claimed this machine, e.g. `msi-ec`.
     #[zbus(property)]
     fn backend_name(&self) -> String {

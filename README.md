@@ -57,7 +57,9 @@ Those are defaults, not decisions: the mapping lives in a config file.
 
 - A TUI showing thermals, fan RPM, power state and battery, refreshed live.
 - Keys to change any of it, without a password prompt when you are at the machine.
-- Battery charge limits, so a laptop that lives on mains stops charging at 80%.
+- Battery charge limits, both halves: stop at 80%, and do not start again until
+  75%, so a laptop on mains stops cycling 79-80-79 all day. On MSI the firmware
+  couples the two — moving one drags the other along, keeping a ten-point gap.
 - Automatic profile changes: a different profile on battery, if you want one.
 - A thermal guard that will not let a quiet fan profile cook the machine.
 
@@ -101,6 +103,8 @@ busctl introspect org.omarchy.Power1 /org/omarchy/Power1
 busctl call org.omarchy.Power1 /org/omarchy/Power1 org.omarchy.Power1 Snapshot
 busctl call org.omarchy.Power1 /org/omarchy/Power1 org.omarchy.Power1 \
     SetPowerLevel s power-saver
+busctl call org.omarchy.Power1 /org/omarchy/Power1 org.omarchy.Power1 \
+    SetChargeStartThreshold y 75
 ```
 
 That is also the fastest way to diagnose a hardware report, which is why the
@@ -167,8 +171,8 @@ OMARCHY_POWER_SYSFS=fixtures/msi-katana cargo run -p omarchy-power
 
 | Vendor | Backend | Covers | Tested on |
 |---|---|---|---|
-| MSI | `msi-ec` | performance level, fan modes, cooler boost, battery saver, charge limit | Katana, fw 1587EMS1.106 |
-| anything with `platform_profile` | `platform-profile` | performance level, charge limit | fixtures only — no confirmed hardware yet |
+| MSI | `msi-ec` | performance level, fan modes, cooler boost, battery saver, charge limits | Katana, fw 1587EMS1.106 |
+| anything with `platform_profile` | `platform-profile` | performance level, charge limits | fixtures only — no confirmed hardware yet |
 
 On MSI, the in-kernel `msi_ec` does not expose these attributes on most models;
 the DKMS build from the AUR does.
